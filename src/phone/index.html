@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SmartSnap Capture</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #16181d; --muted: #646b78;
+    --accent: #2f6fed; --accent-text: #fff; --ok: #1f8a4c; --err: #c23b3b; --line: #e3e6eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111317; --card: #1b1e24; --text: #eceef2; --muted: #9aa1ad; --line: #2a2e36; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
+    font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .target { color: var(--muted); margin-bottom: 20px; font-size: 14px; }
+  .target b { color: var(--text); }
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 18px; border-radius: 14px; border: 0;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .primary { background: var(--accent); color: var(--accent-text); font-size: 18px; padding: 26px; }
+  .secondary { background: var(--card); color: var(--text); border: 1px solid var(--line); margin-top: 12px; }
+  input[type=file] { display: none; }
+  .stats { display: flex; gap: 12px; margin: 20px 0 12px; }
+  .stat { flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; text-align: center; }
+  .stat .n { font-size: 24px; font-weight: 700; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .thumb { position: relative; aspect-ratio: 3/4; border-radius: 8px; overflow: hidden; background: var(--line); }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb .badge {
+    position: absolute; left: 4px; top: 4px; min-width: 20px; padding: 0 5px; height: 20px; border-radius: 10px;
+    background: rgba(0,0,0,.6); color: #fff; font-size: 12px; line-height: 20px; text-align: center;
+  }
+  .thumb.pending { opacity: .55; }
+  .thumb.failed { outline: 2px solid var(--err); }
+  .thumb .state { position: absolute; right: 4px; bottom: 4px; font-size: 12px; color: #fff; text-shadow: 0 1px 2px #000; }
+  .msg { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .msg.err { color: var(--err); }
+  .tip { margin-top: 18px; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1>SmartSnap</h1>
+  <div class="target" id="target">Connecting…</div>
+
+  <label class="btn primary" for="camera">📷 Take photo</label>
+  <input id="camera" type="file" accept="image/*" capture="environment">
+  <label class="btn secondary" for="library">Choose from photos</label>
+  <input id="library" type="file" accept="image/*" multiple>
+
+  <div class="stats">
+    <div class="stat"><div class="n" id="sent">0</div><div class="l">Sent</div></div>
+    <div class="stat"><div class="n" id="queued">0</div><div class="l">Sending</div></div>
+    <div class="stat"><div class="n" id="failed">0</div><div class="l">Failed</div></div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="msg" id="msg"></div>
+  <p class="tip">Hold the phone square to the screen, fill the frame with the text, and keep some overlap when you scroll between shots. SmartSnap removes the repeated lines.</p>
+
+<script>
+  const token = new URLSearchParams(location.search).get('token');
+  const $ = (id) => document.getElementById(id);
+  const MAX_SIDE = 3200;
+
+  const queue = [];
+  let busy = false;
+  let shotNo = 0;
+  const counts = { sent: 0, queued: 0, failed: 0 };
+
+  function render() {
+    $('sent').textContent = counts.sent;
+    $('queued').textContent = counts.queued;
+    $('failed').textContent = counts.failed;
+  }
+
+  function setMsg(text, err) {
+    $('msg').textContent = text || '';
+    $('msg').className = 'msg' + (err ? ' err' : '');
+  }
+
+  async function refreshTarget() {
+    try {
+      const r = await fetch('/api/status?token=' + token);
+      const { collection } = await r.json();
+      $('target').innerHTML = collection
+        ? 'Sending to <b></b>'
+        : 'No collection open in SmartSnap. Open one on your computer.';
+      if (collection) $('target').querySelector('b').textContent = collection.name;
+    } catch {
+      $('target').textContent = 'Can\'t reach SmartSnap. Is the app open and on the same Wi-Fi?';
+    }
+  }
+
+  // Downscale big camera photos before sending: faster uploads, and drawing
+  // through a canvas applies the EXIF rotation so the desktop sees it upright.
+  async function prepare(file) {
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * scale);
+      c.height = Math.round(bmp.height * scale);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      bmp.close && bmp.close();
+      const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.92));
+      if (blob) return blob;
+    } catch {}
+    return file; // e.g. HEIC the browser can't decode: send as-is
+  }
+
+  function addThumb(file) {
+    const el = document.createElement('div');
+    el.className = 'thumb pending';
+    el.innerHTML = '<img alt=""><span class="badge"></span><span class="state">…</span>';
+    el.querySelector('img').src = URL.createObjectURL(file);
+    el.querySelector('.badge').textContent = ++shotNo;
+    $('grid').prepend(el);
+    return el;
+  }
+
+  function enqueue(files) {
+    for (const file of files) {
+      queue.push({ file, el: addThumb(file) });
+      counts.queued++;
+    }
+    render();
+    pump();
+  }
+
+  // One upload at a time, so images arrive in the order they were taken.
+  async function pump() {
+    if (busy) return;
+    busy = true;
+    while (queue.length) {
+      const item = queue[0];
+      try {
+        const blob = await prepare(item.file);
+        const r = await fetch('/api/upload?token=' + token, {
+          method: 'POST',
+          headers: { 'Content-Type': blob.type || 'image/jpeg' },
+          body: blob,
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+        item.el.className = 'thumb';
+        item.el.querySelector('.state').textContent = '✓';
+        counts.sent++;
+        setMsg('');
+      } catch (err) {
+        item.el.className = 'thumb failed';
+        item.el.querySelector('.state').textContent = '✕';
+        counts.failed++;
+        setMsg('Upload failed: ' + err.message, true);
+        refreshTarget();
+      }
+      queue.shift();
+      counts.queued--;
+      render();
+    }
+    busy = false;
+  }
+
+  for (const id of ['camera', 'library']) {
+    $(id).addEventListener('change', (e) => {
+      enqueue([...e.target.files]);
+      e.target.value = '';
+    });
+  }
+
+  refreshTarget();
+  setInterval(refreshTarget, 5000);
+</script>
+</body>
+</html>

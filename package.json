@@ -1,0 +1,27 @@
+{
+  "name": "smartsnap",
+  "version": "0.1.0",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "rebuild-native": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "mobile:vendor": "node mobile/scripts/vendor.js",
+    "mobile": "node mobile/scripts/vendor.js && node mobile/scripts/serve.js"
+  },
+  "license": "ISC",
+  "description": "Photograph screens with your phone, extract and merge the text on your computer.",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "qrcode": "^1.5.4",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "electron": "^45.2.1"
+  },
+  "productName": "SmartSnap",
+  "private": true
+}

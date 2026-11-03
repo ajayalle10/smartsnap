@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' snap: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>SmartSnap</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <!-- Collections -->
+  <aside class="sidebar">
+    <div class="brand">SmartSnap</div>
+    <button class="btn primary block" id="connectPhone">📱 Connect phone</button>
+    <div class="side-head">
+      <span>Collections</span>
+      <button class="icon-btn" id="newCollection" title="New collection">＋</button>
+    </div>
+    <ul class="collections" id="collections"></ul>
+  </aside>
+
+  <!-- Gallery -->
+  <main class="gallery-pane">
+    <div class="empty-state" id="noCollection">
+      <h2>Start a collection</h2>
+      <p>A collection is one set of photos that becomes one document.</p>
+      <button class="btn primary" id="emptyNew">New collection</button>
+    </div>
+    <div class="gallery-wrap hidden" id="galleryWrap">
+      <header class="toolbar">
+        <h2 id="collectionName" title="Double-click to rename"></h2>
+        <span class="muted" id="imageCount"></span>
+        <div class="spacer"></div>
+        <button class="btn" id="addImages">Add images…</button>
+        <button class="btn" id="selectAll">Select all</button>
+        <button class="btn" id="selectNone">Select none</button>
+      </header>
+      <div class="ocr-bar">
+        <label>Language
+          <select id="lang">
+            <option value="eng">English</option>
+            <option value="fra">French</option>
+            <option value="deu">German</option>
+            <option value="spa">Spanish</option>
+            <option value="ita">Italian</option>
+            <option value="por">Portuguese</option>
+            <option value="hin">Hindi</option>
+            <option value="eng+hin">English + Hindi</option>
+            <option value="chi_sim">Chinese (Simplified)</option>
+            <option value="jpn">Japanese</option>
+            <option value="ara">Arabic</option>
+          </select>
+        </label>
+        <button class="btn primary" id="runOcr">Extract text</button>
+        <div class="progress hidden" id="progress"><div class="bar" id="progressBar"></div></div>
+        <span class="muted" id="ocrMsg"></span>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="grid-empty hidden" id="gridEmpty">
+        <p><b>No images yet.</b> Click <b>Connect phone</b>, scan the QR code, and start taking photos. They'll show up here as they arrive.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Document / image text -->
+  <section class="doc-pane">
+    <div class="tabs">
+      <button class="tab active" data-tab="doc">Document</button>
+      <button class="tab" data-tab="image">Image text</button>
+    </div>
+    <div class="tab-body" id="tab-doc">
+      <div class="doc-tools">
+        <label class="check"><input type="checkbox" id="removeOverlap" checked> Remove overlaps</label>
+        <button class="btn" id="rebuild">Rebuild</button>
+        <div class="spacer"></div>
+        <button class="btn primary" id="copyAll">Copy all</button>
+        <button class="btn" id="exportTxt">Export .txt</button>
+      </div>
+      <div class="muted small" id="docInfo"></div>
+      <textarea id="doc" spellcheck="false" placeholder="Extracted text from the selected images appears here, in order."></textarea>
+    </div>
+    <div class="tab-body hidden" id="tab-image">
+      <div class="doc-tools">
+        <span id="imageTitle" class="muted">Click an image to see its text.</span>
+        <div class="spacer"></div>
+        <button class="btn hidden" id="rerunOne">Re-run OCR</button>
+        <button class="btn hidden" id="editText">Edit text</button>
+      </div>
+      <div class="muted small" id="imageInfo"></div>
+      <div class="image-text" id="imageText"></div>
+      <textarea class="hidden" id="imageTextEdit" spellcheck="false"></textarea>
+    </div>
+  </section>
+</div>
+
+<!-- Phone pairing -->
+<div class="modal hidden" id="pairModal">
+  <div class="dialog pair">
+    <h3>Connect your phone</h3>
+    <p>Make sure your phone is on the same Wi-Fi as this computer, then scan this code with the phone's camera.</p>
+    <img id="qr" alt="Pairing QR code">
+    <div class="pair-url"><code id="pairUrl"></code></div>
+    <label class="small muted" id="addrPick">Network
+      <select id="addr"></select>
+    </label>
+    <p class="small muted">Photos go into the collection that's open here. If the page won't load on your phone, allow SmartSnap through Windows Firewall for private networks.</p>
+    <div class="dialog-actions"><button class="btn primary" data-close>Done</button></div>
+  </div>
+</div>
+
+<!-- Image editor -->
+<div class="modal hidden" id="editModal">
+  <div class="dialog editor">
+    <div class="editor-head">
+      <h3>Crop &amp; straighten</h3>
+      <span class="muted small">Drag the four corners onto the edges of the text area. It will be flattened to a rectangle.</span>
+    </div>
+    <div class="editor-stage" id="editorStage">
+      <canvas id="editorCanvas"></canvas>
+      <svg id="editorOverlay"></svg>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn" id="rotL">⟲ Rotate</button>
+      <button class="btn" id="rotR">⟳ Rotate</button>
+      <button class="btn" id="cornersFull">Full image</button>
+      <div class="spacer"></div>
+      <button class="btn" id="resetEdit">Restore original</button>
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn primary" id="applyEdit">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- Simple prompt/confirm (Electron has no window.prompt) -->
+<div class="modal hidden" id="askModal">
+  <div class="dialog ask">
+    <h3 id="askTitle"></h3>
+    <p id="askText" class="muted"></p>
+    <input id="askInput" type="text">
+    <div class="dialog-actions">
+      <button class="btn" id="askCancel">Cancel</button>
+      <button class="btn primary" id="askOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="imaging.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.smartsnap-dev/
+mobile/vendor/
+mobile/scripts/.qr.png

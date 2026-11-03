@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="SmartSnap">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111317" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<title>SmartSnap</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ============ Home: collections ============ -->
+<section class="view" id="view-home">
+  <header class="bar">
+    <h1>SmartSnap</h1>
+    <span class="pill" id="engine">Starting…</span>
+    <button class="icon" id="openSettings" aria-label="Settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+    </button>
+  </header>
+  <button class="btn primary big wide" id="newCollection">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New collection
+  </button>
+  <p class="section-label">Collections</p>
+  <ul class="collections" id="collections"></ul>
+  <div class="empty" id="homeEmpty">
+    <p><b>No collections yet.</b></p>
+    <p>A collection is a set of photos that becomes one document. Create one, take photos of each screen or page, and SmartSnap reads and merges the text.</p>
+  </div>
+</section>
+
+<!-- ============ Collection ============ -->
+<section class="view hidden" id="view-collection">
+  <header class="bar">
+    <button class="icon" id="back" aria-label="Back to collections">
+      <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <h2 id="colName"></h2>
+    <button class="icon" id="colMenu" aria-label="Collection options">
+      <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>
+    </button>
+  </header>
+  <nav class="seg">
+    <button class="active" data-tab="photos">Photos <span id="photoCount"></span></button>
+    <button data-tab="text">Text</button>
+  </nav>
+
+  <div class="tab" id="tab-photos">
+    <div class="toolbar">
+      <span class="muted small" id="selInfo"></span>
+      <span class="spacer"></span>
+      <button class="btn small" id="reorderToggle">Reorder</button>
+    </div>
+    <ol class="grid" id="grid"></ol>
+    <div class="empty" id="gridEmpty">
+      <p><b>No photos yet.</b></p>
+      <p>Tap <b>Take photo</b> below. Fill the frame with the text, and when you scroll, keep a little overlap with the previous shot. SmartSnap removes the repeated lines.</p>
+    </div>
+  </div>
+
+  <div class="tab hidden" id="tab-text">
+    <div class="banner hidden" id="docStale">
+      <span>Photos changed since you edited this text.</span>
+      <button class="btn small" id="docUpdate">Update text</button>
+    </div>
+    <div class="toolbar">
+      <label class="check"><input type="checkbox" id="removeOverlap" checked> Remove overlaps</label>
+    </div>
+    <p class="muted small" id="docInfo"></p>
+    <textarea id="doc" placeholder="Text from your selected photos appears here, in order." spellcheck="false"></textarea>
+    <div class="doc-actions">
+      <button class="btn primary" id="copyAll">Copy all</button>
+      <button class="btn" id="shareDoc">Share</button>
+      <button class="btn" id="saveTxt">Save .txt</button>
+      <button class="btn" id="savePdf">PDF</button>
+    </div>
+  </div>
+
+  <div class="capture-bar">
+    <label class="btn primary big" for="camera">
+      <svg viewBox="0 0 24 24"><path d="M9 4h6l1.5 2H20a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h3.5L9 4Z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
+      Take photo
+    </label>
+    <label class="btn big square" for="library" aria-label="Add from Photos">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 9"/></svg>
+    </label>
+  </div>
+</section>
+
+<!-- ============ Photo viewer ============ -->
+<section class="sheet hidden" id="viewer">
+  <header class="bar">
+    <button class="icon" id="viewerClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <h2 id="viewerTitle"></h2>
+    <label class="check small"><input type="checkbox" id="viewerSelected"> Include</label>
+  </header>
+  <div class="viewer-img">
+    <img id="viewerImg" alt="">
+    <button class="nav prev" id="viewerPrev" aria-label="Previous photo">‹</button>
+    <button class="nav next" id="viewerNext" aria-label="Next photo">›</button>
+  </div>
+  <div class="viewer-actions">
+    <button class="btn small" id="vCrop">Crop</button>
+    <button class="btn small" id="vRetake">Retake</button>
+    <button class="btn small" id="vReread">Read again</button>
+    <button class="btn small danger" id="vDelete">Delete</button>
+  </div>
+  <div class="viewer-text">
+    <div class="toolbar">
+      <span class="muted small" id="viewerInfo"></span>
+      <span class="spacer"></span>
+      <button class="btn small" id="vEditText">Edit text</button>
+    </div>
+    <div class="text-view" id="viewerText"></div>
+    <textarea class="hidden" id="viewerTextEdit" spellcheck="false"></textarea>
+  </div>
+</section>
+
+<!-- ============ Crop ============ -->
+<section class="cropper hidden" id="cropper">
+  <header class="crop-head">
+    <button class="icon light" id="cropRotL" aria-label="Rotate left"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+    <h2 id="cropTitle">Crop photo</h2>
+    <button class="icon light" id="cropRotR" aria-label="Rotate right"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+  </header>
+  <p class="crop-hint">Drag the corners onto the edges of the text. A slanted shot gets straightened.</p>
+  <div class="crop-stage" id="cropStage">
+    <canvas id="cropCanvas"></canvas>
+    <svg id="cropOverlay"></svg>
+    <div class="crop-busy hidden" id="cropBusy">Working…</div>
+  </div>
+  <div class="crop-actions">
+    <button class="btn dark" id="cropRetake">Retake</button>
+    <button class="btn dark" id="cropCancel">Cancel</button>
+    <button class="btn dark" id="cropRestore">Restore original</button>
+    <button class="btn dark" id="cropFull">Use full photo</button>
+    <button class="btn primary" id="cropApply">Crop &amp; use</button>
+  </div>
+</section>
+
+<!-- ============ Settings ============ -->
+<section class="sheet hidden" id="settings">
+  <header class="bar">
+    <button class="icon" data-close="settings" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <h2>Settings</h2>
+    <span></span>
+  </header>
+  <div class="form">
+    <label class="row"><span>Crop after each photo<small>Opens the crop screen right after you tap Use Photo</small></span>
+      <input type="checkbox" id="setCrop" class="switch"></label>
+    <label class="row"><span>Text model<small>Fast is quicker; Accurate is better on small or messy text</small></span>
+      <select id="setModel"><option value="fast">Fast</option><option value="best">Accurate</option></select></label>
+    <label class="row"><span>Image size for reading<small>Smaller is faster; larger helps tiny text</small></span>
+      <select id="setMaxSide"><option value="1200">Small</option><option value="1600">Medium</option><option value="2000">Large</option></select></label>
+    <label class="row"><span>Photos read at once</span>
+      <select id="setWorkers"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+    <p class="muted small" id="storageInfo"></p>
+    <p class="muted small">Your photos and text stay on this iPhone. Nothing is uploaded.</p>
+  </div>
+</section>
+
+<!-- ============ Action sheet & dialog ============ -->
+<div class="backdrop hidden" id="actions">
+  <div class="action-sheet" id="actionList"></div>
+</div>
+<div class="backdrop center hidden" id="dialog">
+  <div class="dialog">
+    <h3 id="dlgTitle"></h3>
+    <p id="dlgText" class="muted"></p>
+    <input id="dlgInput" type="text" autocomplete="off">
+    <div class="dlg-buttons">
+      <button class="btn" id="dlgCancel">Cancel</button>
+      <button class="btn primary" id="dlgOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<input id="camera" type="file" accept="image/*" capture="environment">
+<input id="library" type="file" accept="image/*" multiple>
+<input id="retakeInput" type="file" accept="image/*" capture="environment">
+
+<div id="print"></div>
+<div class="toast hidden" id="toast"></div>
+
+<script src="vendor/tesseract/tesseract.min.js"></script>
+<script src="vendor/consolidate.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
