@@ -94,34 +94,62 @@ export async function deleteCollection(id) {
 
 // ---------- photos ----------
 
+// iPhone Safari often refuses to store Blobs in IndexedDB ("Error preparing
+// Blob/File data to be stored in object store"), so image fields are stored
+// as raw bytes and turned back into Blobs when read.
+const IMAGE_FIELDS = ['image', 'thumb', 'edited'];
+
+// Must run before opening a transaction: awaiting anything that isn't an
+// IndexedDB request inside a transaction makes it close early.
+async function packImages(fields) {
+  const out = { ...fields };
+  for (const key of IMAGE_FIELDS) {
+    const v = out[key];
+    if (v instanceof Blob) out[key] = { bytes: await v.arrayBuffer(), type: v.type || 'image/jpeg' };
+  }
+  return out;
+}
+
+function unpackImages(rec) {
+  if (!rec) return rec;
+  for (const key of IMAGE_FIELDS) {
+    const v = rec[key];
+    // Blobs have a bytes() method too, so check for stored bytes exactly.
+    if (v && !(v instanceof Blob) && v.bytes instanceof ArrayBuffer) rec[key] = new Blob([v.bytes], { type: v.type });
+  }
+  return rec;
+}
+
 export async function listPhotos(collectionId) {
   const all = await wrap((await store('photos')).index('byCollection').getAll(collectionId));
-  return all.sort((a, b) => a.position - b.position);
+  return all.map(unpackImages).sort((a, b) => a.position - b.position);
 }
 
 export async function getPhoto(id) {
-  return wrap((await store('photos')).get(id));
+  return unpackImages(await wrap((await store('photos')).get(id)));
 }
 
 export async function addPhoto(collectionId, fields) {
-  const existing = await listPhotos(collectionId);
-  const position = existing.length ? existing[existing.length - 1].position + 1 : 1;
+  const existing = await wrap((await store('photos')).index('byCollection').getAll(collectionId));
+  const position = existing.reduce((max, p) => Math.max(max, p.position), 0) + 1;
   const rec = {
     collectionId, position, createdAt: Date.now(), selected: true,
     status: 'queued', text: '', conf: null, lowWords: [], edited: null, ...fields,
   };
-  rec.id = await wrap((await store('photos', 'readwrite')).add(rec));
+  const packed = await packImages(rec);
+  rec.id = await wrap((await store('photos', 'readwrite')).add(packed));
   await updateCollection(collectionId, {});
   return rec;
 }
 
 export async function updatePhoto(id, fields) {
+  const packed = await packImages(fields);
   const s = await store('photos', 'readwrite');
   const rec = await wrap(s.get(id));
   if (!rec) return null;
-  Object.assign(rec, fields);
+  Object.assign(rec, packed);
   await wrap(s.put(rec));
-  return rec;
+  return unpackImages(rec);
 }
 
 export async function deletePhoto(id) {
@@ -144,7 +172,7 @@ export async function reorderPhotos(orderedIds) {
 // Photos left mid-OCR when the app was closed.
 export async function unfinishedPhotos() {
   const all = await wrap((await store('photos')).getAll());
-  return all.filter((p) => p.status === 'queued' || p.status === 'reading').sort((a, b) => a.id - b.id);
+  return all.filter((p) => p.status === 'queued' || p.status === 'reading').sort((a, b) => a.id - b.id).map(unpackImages);
 }
 
 // Ask iOS not to evict our data under storage pressure (granted for
