@@ -3,6 +3,7 @@
 // ("capture" mode) and for editing a saved photo ("edit" mode).
 
 import { decode, resized, rotated, warpQuad, isFullQuad, release } from './imaging.js';
+import { detectDocument } from './detect.js';
 
 const $ = (id) => document.getElementById(id);
 const PAD = 28;   // keeps the corner handles inside the screen and easy to grab
@@ -27,7 +28,7 @@ export async function openCropper(blob, opts) {
   $('cropRetake').classList.toggle('hidden', !capture);
   $('cropCancel').classList.toggle('hidden', capture);
   $('cropRestore').classList.toggle('hidden', capture || !opts.canRestore);
-  $('cropFull').textContent = capture ? 'Use full photo' : 'Reset corners';
+  $('cropFull').textContent = capture ? 'Use full photo' : 'Full photo';
   $('cropApply').textContent = capture ? 'Crop & use' : 'Apply';
   $('cropper').classList.remove('hidden');
   document.body.classList.add('no-scroll');
@@ -55,7 +56,7 @@ export async function openCropper(blob, opts) {
     $('cropRestore').onclick = () => finish({ action: 'restore' });
     $('cropFull').onclick = () => {
       if (capture) finish({ action: 'use', canvas: st.work });
-      else resetCorners();
+      else setCorners(null);
     };
     $('cropApply').onclick = async () => {
       const { width: w, height: h } = st.work;
@@ -79,15 +80,21 @@ export async function openCropper(blob, opts) {
   });
 }
 
+// Corners start on the detected page/screen edges when we find them.
 function setWork() {
   if (st.work !== st.source) release(st.work);
   st.work = st.turns % 4 === 0 ? st.source : rotated(st.source, st.turns);
-  resetCorners();
+  let found = null;
+  try { found = detectDocument(st.work); } catch { /* fall back to the full photo */ }
+  setCorners(found);
 }
 
-function resetCorners() {
+function setCorners(corners) {
   const { width: w, height: h } = st.work;
-  st.corners = [[0, 0], [w, 0], [w, h], [0, h]];
+  st.corners = corners || [[0, 0], [w, 0], [w, h], [0, h]];
+  $('cropHint').textContent = corners
+    ? 'Edges found automatically. Drag a corner if it\'s off.'
+    : 'Drag the corners onto the edges of the text. A slanted shot gets straightened.';
   layout();
 }
 

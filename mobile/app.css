@@ -114,7 +114,39 @@ textarea {
   width: 100%; min-height: 50vh; padding: 12px; border-radius: 12px; border: 1px solid var(--line);
   background: var(--card); color: var(--text); font: 16px/1.5 -apple-system, system-ui, sans-serif; resize: vertical;
 }
-.doc-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.doc-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+.doc-actions .btn { padding: 11px 4px; }
+.doc-actions .wide-cell { grid-column: 1 / -1; }
+svg.sm { width: 18px; height: 18px; }
+.icon.sm { width: 36px; height: 36px; }
+
+/* Find & replace. Matches are drawn on a layer behind a transparent
+   textarea; both use identical text metrics so they line up. */
+.find-bar { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.find-row { display: flex; align-items: center; gap: 6px; }
+.find-row input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.find-count { font-size: 13px; color: var(--muted); min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.doc-wrap { position: relative; }
+.doc-wrap textarea, .doc-backdrop {
+  font: 16px/1.5 -apple-system, system-ui, sans-serif; padding: 12px; border: 1px solid transparent;
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; letter-spacing: normal; tab-size: 4;
+}
+.doc-wrap textarea { position: relative; z-index: 1; background: transparent; border-color: var(--line); display: block; }
+.doc-backdrop {
+  position: absolute; inset: 0; overflow: hidden; color: transparent; border-radius: 12px;
+  background: var(--card); pointer-events: none;
+}
+.doc-backdrop mark { color: transparent; background: var(--mark); border-radius: 3px; }
+.doc-backdrop mark.current { background: #ffb347; }
+
+.row.link { width: 100%; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.chev { width: 20px; height: 20px; color: var(--muted); }
+.lang-list { list-style: none; margin: 12px 0 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.lang-list li label { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid var(--line); }
+.lang-list li:last-child label { border-bottom: 0; }
+.lang-list .name { flex: 1; }
+.lang-list .native { color: var(--muted); font-size: 14px; }
+.lang-list input { width: 22px; height: 22px; accent-color: var(--accent); margin: 0; }
 
 /* ---------- photo viewer ---------- */
 .sheet {

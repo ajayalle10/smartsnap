@@ -73,13 +73,35 @@
     </div>
     <div class="toolbar">
       <label class="check"><input type="checkbox" id="removeOverlap" checked> Remove overlaps</label>
+      <span class="spacer"></span>
+      <button class="btn small" id="findToggle">
+        <svg viewBox="0 0 24 24" class="sm"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>Find
+      </button>
+    </div>
+    <div class="find-bar hidden" id="findBar">
+      <div class="find-row">
+        <input type="search" id="findInput" placeholder="Find" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <span class="find-count" id="findCount"></span>
+        <button class="icon sm" id="findPrev" aria-label="Previous match"><svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></button>
+        <button class="icon sm" id="findNext" aria-label="Next match"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+      </div>
+      <div class="find-row">
+        <input type="text" id="replaceInput" placeholder="Replace with" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="btn small" id="replaceOne">Replace</button>
+        <button class="btn small" id="replaceAll">All</button>
+      </div>
+      <label class="check small"><input type="checkbox" id="findCase"> Match case</label>
     </div>
     <p class="muted small" id="docInfo"></p>
-    <textarea id="doc" placeholder="Text from your selected photos appears here, in order." spellcheck="false"></textarea>
+    <div class="doc-wrap">
+      <div class="doc-backdrop" id="docBackdrop" aria-hidden="true"></div>
+      <textarea id="doc" placeholder="Text from your selected photos appears here, in order." spellcheck="false"></textarea>
+    </div>
     <div class="doc-actions">
-      <button class="btn primary" id="copyAll">Copy all</button>
+      <button class="btn primary wide-cell" id="copyAll">Copy all</button>
       <button class="btn" id="shareDoc">Share</button>
-      <button class="btn" id="saveTxt">Save .txt</button>
+      <button class="btn" id="saveTxt">.txt</button>
+      <button class="btn" id="saveDocx">Word</button>
       <button class="btn" id="savePdf">PDF</button>
     </div>
   </div>
@@ -131,7 +153,7 @@
     <h2 id="cropTitle">Crop photo</h2>
     <button class="icon light" id="cropRotR" aria-label="Rotate right"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
   </header>
-  <p class="crop-hint">Drag the corners onto the edges of the text. A slanted shot gets straightened.</p>
+  <p class="crop-hint" id="cropHint">Drag the corners onto the edges of the text. A slanted shot gets straightened.</p>
   <div class="crop-stage" id="cropStage">
     <canvas id="cropCanvas"></canvas>
     <svg id="cropOverlay"></svg>
@@ -154,17 +176,32 @@
     <span></span>
   </header>
   <div class="form">
-    <label class="row"><span>Crop after each photo<small>Opens the crop screen right after you tap Use Photo</small></span>
+    <button class="row link" id="openLangs"><span>Languages<small id="langSummary">English</small></span>
+      <svg viewBox="0 0 24 24" class="chev"><path d="m9 6 6 6-6 6"/></svg></button>
+    <label class="row"><span>Crop after each photo<small>Opens the crop screen right after you tap Use Photo, with the edges found automatically</small></span>
       <input type="checkbox" id="setCrop" class="switch"></label>
-    <label class="row"><span>Text model<small>Fast is quicker; Accurate is better on small or messy text</small></span>
+    <label class="row"><span>Clean up photos<small>Evens out glare, shadows and dark mode before reading</small></span>
+      <input type="checkbox" id="setCleanup" class="switch"></label>
+    <label class="row"><span>Text model<small>Fast is quicker; Accurate is better on small or messy text. Applies to English only.</small></span>
       <select id="setModel"><option value="fast">Fast</option><option value="best">Accurate</option></select></label>
     <label class="row"><span>Image size for reading<small>Smaller is faster; larger helps tiny text</small></span>
       <select id="setMaxSide"><option value="1200">Small</option><option value="1600">Medium</option><option value="2000">Large</option></select></label>
     <label class="row"><span>Photos read at once</span>
       <select id="setWorkers"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
     <p class="muted small" id="storageInfo"></p>
-    <p class="muted small">Your photos and text stay on this iPhone. Nothing is uploaded.</p>
+    <p class="muted small">Your photos and text stay on this device. Nothing is uploaded.</p>
   </div>
+</section>
+
+<!-- ============ Languages ============ -->
+<section class="sheet hidden" id="langSheet">
+  <header class="bar">
+    <button class="icon" id="langBack" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <h2>Languages</h2>
+    <button class="btn small primary" id="langDone">Done</button>
+  </header>
+  <p class="muted small">Pick up to 3 languages that appear in your photos. Each one downloads once (about 2–15 MB) and then works offline. Fewer languages read faster.</p>
+  <ul class="lang-list" id="langList"></ul>
 </section>
 
 <!-- ============ Action sheet & dialog ============ -->

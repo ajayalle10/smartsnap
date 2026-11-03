@@ -2,6 +2,20 @@ import * as db from './db.js';
 import * as ocr from './ocr.js';
 import { decode, resized, toBlob, blurScore, release, BLUR_THRESHOLD } from './imaging.js';
 import { openCropper } from './cropper.js';
+import { initFind, refreshFind, closeFind } from './find.js';
+import { buildDocx } from './docx.js';
+
+// Tesseract language codes. Each downloads once, then works offline.
+const LANGUAGES = [
+  ['eng', 'English', ''], ['hin', 'Hindi', 'हिन्दी'], ['tel', 'Telugu', 'తెలుగు'], ['tam', 'Tamil', 'தமிழ்'],
+  ['kan', 'Kannada', 'ಕನ್ನಡ'], ['mal', 'Malayalam', 'മലയാളം'], ['mar', 'Marathi', 'मराठी'], ['ben', 'Bengali', 'বাংলা'],
+  ['guj', 'Gujarati', 'ગુજરાતી'], ['pan', 'Punjabi', 'ਪੰਜਾਬੀ'], ['urd', 'Urdu', 'اردو'], ['spa', 'Spanish', 'Español'],
+  ['fra', 'French', 'Français'], ['deu', 'German', 'Deutsch'], ['ita', 'Italian', 'Italiano'], ['por', 'Portuguese', 'Português'],
+  ['nld', 'Dutch', 'Nederlands'], ['rus', 'Russian', 'Русский'], ['ara', 'Arabic', 'العربية'], ['tur', 'Turkish', 'Türkçe'],
+  ['chi_sim', 'Chinese (Simplified)', '简体中文'], ['chi_tra', 'Chinese (Traditional)', '繁體中文'], ['jpn', 'Japanese', '日本語'],
+  ['kor', 'Korean', '한국어'], ['vie', 'Vietnamese', 'Tiếng Việt'], ['ind', 'Indonesian', 'Bahasa Indonesia'],
+];
+const MAX_LANGS = 3;
 
 const $ = (id) => document.getElementById(id);
 
@@ -21,7 +35,7 @@ const state = {
 // ---------- small helpers ----------
 
 function loadSettings() {
-  const defaults = { cropAfterCapture: true, model: 'fast', maxSide: '1600', workers: '2' };
+  const defaults = { cropAfterCapture: true, cleanup: true, langs: ['eng'], model: 'fast', maxSide: '1600', workers: '2' };
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { return defaults; }
 }
 function saveSettings() {
@@ -114,6 +128,7 @@ function show(viewId) {
 // Back gesture / button closes the top-most screen.
 window.addEventListener('popstate', () => {
   if (!$('viewer').classList.contains('hidden')) return hideViewer();
+  if (!$('langSheet').classList.contains('hidden')) return closeLangs();
   if (!$('settings').classList.contains('hidden')) return $('settings').classList.add('hidden');
   if (state.collection) goHome(false);
 });
@@ -157,6 +172,7 @@ function collectionMenu(c, fromHome) {
       if (state.collection?.id === c.id) { state.collection.name = name; $('colName').textContent = name; }
       if (fromHome) renderHome();
     } },
+    { label: 'Read all photos again', run: rereadAll, hidden: fromHome },
     { label: 'Select all photos', run: () => setAllSelected(true), hidden: fromHome },
     { label: 'Deselect all photos', run: () => setAllSelected(false), hidden: fromHome },
     { label: 'Delete collection', danger: true, run: async () => {
@@ -176,6 +192,7 @@ async function openCollection(id, push = true) {
   state.photos = await db.listPhotos(id);
   state.reorder = false;
   $('colName').textContent = state.collection.name;
+  closeFind();
   $('doc').value = state.collection.doc || '';
   switchTab('photos');
   renderGrid();
@@ -440,8 +457,15 @@ async function rereadPhoto(p, fields) {
   const updated = await db.updatePhoto(p.id, { ...fields, status: 'queued', text: '', lowWords: [], textEdited: false });
   if (fields.thumb) dropThumb(p.id);
   updateCard(updated);
-  renderViewer();
+  if (state.viewerIndex >= 0) renderViewer();
   ocr.enqueue(p.id);
+}
+
+// After changing languages or settings, re-read everything in this collection.
+async function rereadAll() {
+  if (!state.photos.length) return toast('No photos to read');
+  for (const p of [...state.photos]) await rereadPhoto(p, {});
+  toast(`Reading ${plural(state.photos.length, 'photo')} again…`);
 }
 
 $('vCrop').onclick = async () => {
@@ -537,6 +561,7 @@ async function photosChanged() {
 async function rebuildDoc() {
   const { text } = mergedText();
   $('doc').value = text;
+  refreshFind();
   $('docStale').classList.add('hidden');
   state.collection = await db.updateCollection(state.collection.id, { doc: text, docEdited: false });
   renderDocInfo();
@@ -603,17 +628,35 @@ $('shareDoc').onclick = async () => {
   } catch { /* cancelled */ }
 };
 
-$('saveTxt').onclick = () => {
-  const text = $('doc').value;
-  if (!text) return toast('Nothing to save yet');
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+// On iPhone the share sheet is the natural way to save a file (Save to
+// Files, open in Word…); elsewhere fall back to a download.
+async function saveFile(blob, name) {
+  const file = new File([blob], name, { type: blob.type });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return; } catch (err) {
+      if (err?.name === 'AbortError') return;   // user closed the sheet
+    }
+  }
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = fileName('txt');
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+$('saveTxt').onclick = () => {
+  const text = $('doc').value;
+  if (!text) return toast('Nothing to save yet');
+  saveFile(new Blob([text], { type: 'text/plain;charset=utf-8' }), fileName('txt'));
+};
+
+$('saveDocx').onclick = () => {
+  const text = $('doc').value;
+  if (!text) return toast('Nothing to save yet');
+  saveFile(buildDocx(state.collection.name, text), fileName('docx'));
 };
 
 // PDF through the system print sheet: on iPhone, tap Share in the print
@@ -629,8 +672,15 @@ $('savePdf').onclick = () => {
 
 const SETTING_INPUTS = { setModel: 'model', setMaxSide: 'maxSide', setWorkers: 'workers' };
 
+const langName = (code) => LANGUAGES.find(([c]) => c === code)?.[1] || code;
+function renderLangSummary() {
+  $('langSummary').textContent = settings.langs.map(langName).join(', ');
+}
+
 $('openSettings').onclick = async () => {
   $('setCrop').checked = settings.cropAfterCapture;
+  $('setCleanup').checked = settings.cleanup;
+  renderLangSummary();
   for (const [id, key] of Object.entries(SETTING_INPUTS)) $(id).value = settings[key];
   $('settings').classList.remove('hidden');
   history.pushState({ settings: true }, '');
@@ -641,6 +691,7 @@ $('openSettings').onclick = async () => {
 };
 document.querySelector('[data-close="settings"]').onclick = () => history.back();
 $('setCrop').onchange = () => { settings.cropAfterCapture = $('setCrop').checked; saveSettings(); };
+$('setCleanup').onchange = () => { settings.cleanup = $('setCleanup').checked; saveSettings(); ocr.configure(settings); };
 for (const [id, key] of Object.entries(SETTING_INPUTS)) {
   $(id).onchange = () => {
     settings[key] = $(id).value;
@@ -649,6 +700,54 @@ for (const [id, key] of Object.entries(SETTING_INPUTS)) {
   };
 }
 
+// ---------- languages ----------
+
+let pickedLangs = [];
+
+$('openLangs').onclick = () => {
+  pickedLangs = [...settings.langs];
+  const ul = $('langList');
+  ul.innerHTML = '';
+  // Chosen languages first, then the rest in list order.
+  const ordered = [...LANGUAGES].sort((a, b) => pickedLangs.includes(b[0]) - pickedLangs.includes(a[0]));
+  for (const [code, name, native] of ordered) {
+    const li = document.createElement('li');
+    li.innerHTML = '<label><span class="name"></span><span class="native"></span><input type="checkbox"></label>';
+    li.querySelector('.name').textContent = name;
+    li.querySelector('.native').textContent = native;
+    const box = li.querySelector('input');
+    box.checked = pickedLangs.includes(code);
+    box.onchange = () => {
+      if (box.checked && pickedLangs.length >= MAX_LANGS) {
+        box.checked = false;
+        return toast(`Pick up to ${MAX_LANGS} languages`);
+      }
+      if (box.checked) pickedLangs.push(code);
+      else pickedLangs = pickedLangs.filter((c) => c !== code);
+    };
+    ul.appendChild(li);
+  }
+  $('langSheet').classList.remove('hidden');
+  history.pushState({ langs: true }, '');
+};
+
+function closeLangs() {
+  $('langSheet').classList.add('hidden');
+  if (!pickedLangs.length) pickedLangs = ['eng'];
+  const changed = pickedLangs.join('+') !== settings.langs.join('+');
+  if (!changed) return;
+  settings.langs = [...pickedLangs];
+  saveSettings();
+  renderLangSummary();
+  // Starts downloading the new languages right away, while online.
+  ocr.configure(settings).then(
+    () => toast('Languages ready. Existing photos: ⋯ → Read all photos again.', 4000),
+    () => toast('Couldn\'t download the languages. Check your internet connection and try again.', 5000),
+  );
+}
+$('langDone').onclick = () => history.back();
+$('langBack').onclick = () => history.back();
+
 // ---------- start ----------
 
 ocr.onStatus((text, kind) => {
@@ -656,6 +755,7 @@ ocr.onStatus((text, kind) => {
   $('engine').className = `pill ${kind || ''}`;
 });
 ocr.configure(settings, onPhotoUpdated).catch((err) => toast(String(err?.message || err), 5000));
+initFind({ toast });
 
 (async () => {
   await renderHome();

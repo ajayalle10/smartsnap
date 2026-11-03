@@ -22,9 +22,12 @@ Then scan the QR code printed in the terminal. Offline mode and Share only work 
 |---|---|
 | `mobile/js/app.js` | Screens: collections, photos, photo viewer, text, settings |
 | `mobile/js/cropper.js` | Crop & straighten screen (opens right after each photo) |
+| `mobile/js/detect.js` | Finds page/screen edges so the crop starts in place |
+| `mobile/js/find.js` | Find & replace in the merged text |
+| `mobile/js/docx.js` | Word (.docx) export without a library |
 | `mobile/js/ocr.js` | Tesseract worker pool and reading queue |
 | `mobile/js/db.js` | On-device storage (IndexedDB) |
-| `mobile/js/imaging.js` | Resize, rotate, perspective flatten, blur check |
+| `mobile/js/imaging.js` | Resize, rotate, perspective flatten, blur check, lighting cleanup before OCR |
 | `mobile/sw.js` | Offline cache |
 | `mobile/scripts/` | Build helpers: vendor OCR files, local server, icon generator |
 

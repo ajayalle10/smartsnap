@@ -3,13 +3,13 @@
 // happens while you keep taking photos.
 
 import * as db from './db.js';
-import { decode, resized, grayscale, toBlob, release } from './imaging.js';
+import { decode, resized, grayscale, cleanForOcr, toBlob, release } from './imaging.js';
 
 const abs = (p) => new URL(p, location.href).href;
 const LOW_CONFIDENCE = 60;
 
 const engine = { scheduler: null, ready: null, key: '' };
-let settings = { model: 'fast', maxSide: '1600', workers: '2' };
+let settings = { model: 'fast', maxSide: '1600', workers: '2', cleanup: true, langs: ['eng'] };
 let listener = () => {};
 let prepChain = Promise.resolve();
 const tokens = new Map();   // photoId -> token of the latest request
@@ -25,24 +25,33 @@ export function onStatus(fn) { engine.onStatus = fn; }
 function status(text, kind) { engine.onStatus?.(text, kind); }
 
 export function start() {
-  const key = `${settings.model}/${settings.workers}`;
+  const langs = settings.langs?.length ? settings.langs : ['eng'];
+  const englishOnly = langs.length === 1 && langs[0] === 'eng';
+  const key = `${englishOnly ? settings.model : 'cdn'}/${langs.join('+')}/${settings.workers}`;
   if (engine.key === key && engine.ready) return engine.ready;
   const old = engine.scheduler;
   engine.key = key;
   engine.scheduler = null;
-  status('Loading OCR…');
+  status(englishOnly ? 'Loading OCR…' : 'Loading languages…');
   engine.ready = (async () => {
     if (old) await old.terminate();
     const scheduler = Tesseract.createScheduler();
     const options = {
       workerPath: abs('vendor/tesseract/worker.min.js'),
       corePath: abs('vendor/core/'),
-      langPath: abs(`vendor/lang/${settings.model}`),
-      cachePath: settings.model,
       workerBlobURL: false,
     };
+    if (englishOnly) {
+      // Bundled with the app, so it works offline from the first launch.
+      options.langPath = abs(`vendor/lang/${settings.model}`);
+      options.cachePath = settings.model;
+    } else {
+      // Other languages: with no langPath, Tesseract.js fetches each one
+      // from the jsDelivr CDN once and keeps it on the device after that.
+      options.cachePath = 'cdn';
+    }
     const workers = await Promise.all(
-      Array.from({ length: Number(settings.workers) }, () => Tesseract.createWorker('eng', 1, options))
+      Array.from({ length: Number(settings.workers) }, () => Tesseract.createWorker(langs, 1, options))
     );
     workers.forEach((w) => scheduler.addWorker(w));
     if (engine.key === key) {
@@ -51,7 +60,9 @@ export function start() {
     }
     return scheduler;
   })().catch((err) => {
-    status('OCR failed to load', 'err');
+    status(englishOnly ? 'OCR failed to load' : 'Languages failed to load (offline?)', 'err');
+    // Let the next attempt try again instead of reusing the failure.
+    if (engine.key === key) engine.key = '';
     throw err;
   });
   return engine.ready;
@@ -85,6 +96,7 @@ export function enqueue(photoId) {
       listener(await db.updatePhoto(photoId, { status: 'reading' }));
       const img = await decode(photo.edited || photo.image);
       const small = grayscale(resized(img, Number(settings.maxSide)));
+      if (settings.cleanup) cleanForOcr(small);
       const blob = await toBlob(small, 'image/jpeg', 0.92).finally(() => release(small));
       const scheduler = await start();
       const t0 = performance.now();

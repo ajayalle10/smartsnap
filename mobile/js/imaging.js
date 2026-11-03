@@ -50,6 +50,78 @@ export function grayscale(canvas) {
   return canvas;
 }
 
+// Evens out lighting on a greyscale canvas (in place) before OCR: estimates
+// the page background brightness across the photo, divides it out (removes
+// glare, shadows and the bright-centre/dark-edge look of monitor photos),
+// then stretches contrast. Light-on-dark text (dark mode) is inverted first.
+export function cleanForOcr(canvas) {
+  const { width: w, height: h } = canvas;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const img = ctx.getImageData(0, 0, w, h);
+  const px = img.data;
+  const n = w * h;
+
+  let mean = 0;
+  for (let i = 0; i < n; i++) mean += px[i * 4];
+  mean /= n;
+  if (mean < 110) for (let i = 0; i < n; i++) px[i * 4] = 255 - px[i * 4];
+
+  // Background: shrink a lot (letters vanish), take the local maximum so
+  // dark text doesn't pull it down, then let the canvas scale it back up
+  // smoothly.
+  const bw = Math.max(4, Math.round(w / 24)), bh = Math.max(4, Math.round(h / 24));
+  const g = document.createElement('canvas');
+  g.width = w; g.height = h;
+  const gctx = g.getContext('2d', { willReadFrequently: true });
+  const gi = gctx.createImageData(w, h);
+  for (let i = 0; i < n; i++) { const v = px[i * 4]; gi.data[i * 4] = gi.data[i * 4 + 1] = gi.data[i * 4 + 2] = v; gi.data[i * 4 + 3] = 255; }
+  gctx.putImageData(gi, 0, 0);
+  const s = document.createElement('canvas');
+  s.width = bw; s.height = bh;
+  const sctx = s.getContext('2d', { willReadFrequently: true });
+  sctx.imageSmoothingQuality = 'high';
+  sctx.drawImage(g, 0, 0, bw, bh);
+  const sd = sctx.getImageData(0, 0, bw, bh);
+  const small = new Uint8ClampedArray(bw * bh);
+  for (let i = 0; i < bw * bh; i++) small[i] = sd.data[i * 4];
+  for (let y = 0; y < bh; y++) {
+    for (let x = 0; x < bw; x++) {
+      let m = 0;
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const yy = Math.min(bh - 1, Math.max(0, y + dy)), xx = Math.min(bw - 1, Math.max(0, x + dx));
+          m = Math.max(m, small[yy * bw + xx]);
+        }
+      }
+      const o = (y * bw + x) * 4;
+      sd.data[o] = sd.data[o + 1] = sd.data[o + 2] = m;
+    }
+  }
+  sctx.putImageData(sd, 0, 0);
+  gctx.imageSmoothingQuality = 'high';
+  gctx.drawImage(s, 0, 0, w, h);
+  const bg = gctx.getImageData(0, 0, w, h).data;
+  release(g, s);
+
+  // Divide out the background, then stretch so the darkest ~1% is black.
+  const flat = new Uint8ClampedArray(n);
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < n; i++) {
+    const v = Math.min(255, (px[i * 4] / Math.max(bg[i * 4], 1)) * 245);
+    flat[i] = v;
+    hist[flat[i]]++;
+  }
+  let lo = 0;
+  for (let acc = 0; lo < 255 && acc + hist[lo] < n * 0.01; lo++) acc += hist[lo];
+  const span = Math.max(1, 245 - lo);
+  for (let i = 0; i < n; i++) {
+    const v = ((flat[i] - lo) / span) * 255;
+    px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v;
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
 // iPhone Safari caps the total memory of all canvases and frees a canvas's
 // memory only when it's garbage-collected. Past the cap, drawing silently
 // produces nothing. Shrinking a canvas to 0×0 frees its memory right away.
