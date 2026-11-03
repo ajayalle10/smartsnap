@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import * as ocr from './ocr.js';
-import { decode, resized, toBlob, blurScore, BLUR_THRESHOLD } from './imaging.js';
+import { decode, resized, toBlob, blurScore, release, BLUR_THRESHOLD } from './imaging.js';
 import { openCropper } from './cropper.js';
 
 const $ = (id) => document.getElementById(id);
@@ -292,14 +292,18 @@ async function setAllSelected(on) {
 // ---------- capture ----------
 
 // Shrinks the photo for storage and makes a thumbnail + blur estimate.
+// The source canvas (if any) is released once its blobs are made.
 async function storeFields(source) {
   const img = source instanceof Blob ? await decode(source) : source;
   const big = resized(img, STORE_MAX_SIDE);
-  const [image, thumb] = await Promise.all([
-    toBlob(big, 'image/jpeg', 0.9),
-    toBlob(resized(big, THUMB_MAX_SIDE), 'image/jpeg', 0.8),
-  ]);
-  return { image, thumb, width: big.width, height: big.height, blur: blurScore(big) };
+  release(img);
+  const small = resized(big, THUMB_MAX_SIDE);
+  try {
+    const [image, thumb] = await Promise.all([toBlob(big, 'image/jpeg', 0.9), toBlob(small, 'image/jpeg', 0.8)]);
+    return { image, thumb, width: big.width, height: big.height, blur: blurScore(big) };
+  } finally {
+    release(big, small);
+  }
 }
 
 async function addPhoto(source) {
@@ -311,13 +315,22 @@ async function addPhoto(source) {
   if (p.blur < BLUR_THRESHOLD) toast('This photo looks blurry. You may want to retake it.', 3000);
 }
 
+function photoError(err) {
+  console.error(err);
+  toast(`Couldn't add the photo: ${err?.message || err}`, 5000);
+}
+
 $('camera').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file || !state.collection) return;
-  if (!settings.cropAfterCapture) return addPhoto(file);
-  const result = await openCropper(file, { mode: 'capture', onRetake: () => $('camera').click() });
-  if (result.action === 'use') await addPhoto(result.canvas);
+  try {
+    if (!settings.cropAfterCapture) return await addPhoto(file);
+    const result = await openCropper(file, { mode: 'capture', onRetake: () => $('camera').click() });
+    if (result.action === 'use') await addPhoto(result.canvas);
+  } catch (err) {
+    photoError(err);
+  }
 });
 
 $('library').addEventListener('change', async (e) => {
@@ -326,13 +339,17 @@ $('library').addEventListener('change', async (e) => {
   if (!files.length || !state.collection) return;
   // Picked together: keep the photos' name order (IMG_0001, IMG_0002…).
   files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  if (files.length === 1 && settings.cropAfterCapture) {
-    const result = await openCropper(files[0], { mode: 'capture' });
-    if (result.action === 'use') await addPhoto(result.canvas);
-    return;
+  try {
+    if (files.length === 1 && settings.cropAfterCapture) {
+      const result = await openCropper(files[0], { mode: 'capture' });
+      if (result.action === 'use') await addPhoto(result.canvas);
+      return;
+    }
+    toast(`Adding ${plural(files.length, 'photo')}…`);
+    for (const f of files) await addPhoto(f);
+  } catch (err) {
+    photoError(err);
   }
-  toast(`Adding ${plural(files.length, 'photo')}…`);
-  for (const f of files) await addPhoto(f);
 });
 
 // ---------- OCR updates ----------
@@ -432,9 +449,8 @@ $('vCrop').onclick = async () => {
   // Always crop from the original, so edits don't stack up quality loss.
   const result = await openCropper(p.image, { mode: 'edit', canRestore: !!p.edited });
   if (result.action === 'use') {
-    const big = resized(result.canvas, STORE_MAX_SIDE);
-    const [edited, thumb] = await Promise.all([toBlob(big, 'image/jpeg', 0.9), toBlob(resized(big, THUMB_MAX_SIDE), 'image/jpeg', 0.8)]);
-    await rereadPhoto(p, { edited, thumb, blur: blurScore(big) });
+    const { image: edited, thumb, blur } = await storeFields(result.canvas);
+    await rereadPhoto(p, { edited, thumb, blur });
   } else if (result.action === 'restore') {
     const thumb = await toBlob(resized(await decode(p.image), THUMB_MAX_SIDE), 'image/jpeg', 0.8);
     await rereadPhoto(p, { edited: null, thumb });
@@ -448,15 +464,19 @@ $('retakeInput').addEventListener('change', async (e) => {
   e.target.value = '';
   const p = state.photos[state.viewerIndex];
   if (!file || !p) return;
-  let source = file;
-  if (settings.cropAfterCapture) {
-    const result = await openCropper(file, { mode: 'capture', onRetake: () => $('retakeInput').click() });
-    if (result.action !== 'use') return;
-    source = result.canvas;
+  try {
+    let source = file;
+    if (settings.cropAfterCapture) {
+      const result = await openCropper(file, { mode: 'capture', onRetake: () => $('retakeInput').click() });
+      if (result.action !== 'use') return;
+      source = result.canvas;
+    }
+    const fields = await storeFields(source);
+    await rereadPhoto(p, { ...fields, edited: null });
+    toast('Photo replaced');
+  } catch (err) {
+    photoError(err);
   }
-  const fields = await storeFields(source);
-  await rereadPhoto(p, { ...fields, edited: null });
-  toast('Photo replaced');
 });
 
 $('vReread').onclick = () => {
@@ -644,6 +664,18 @@ ocr.configure(settings, onPhotoUpdated).catch((err) => toast(String(err?.message
   for (const p of await db.unfinishedPhotos()) ocr.enqueue(p.id);
 })();
 
+// Anything that fails without its own handler still gets reported.
+window.addEventListener('unhandledrejection', (e) => {
+  console.error(e.reason);
+  toast(`Something went wrong: ${e.reason?.message || e.reason}`, 5000);
+});
+
 if ('serviceWorker' in navigator && window.isSecureContext) {
+  // When a new version has been published, the new service worker takes over
+  // and we reload once so the new code runs (not on the very first install).
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController) location.reload();
+  });
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

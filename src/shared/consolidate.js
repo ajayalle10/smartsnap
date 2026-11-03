@@ -110,21 +110,22 @@ function consolidate(parts, opts = {}) {
   const junctions = [];
   let doc = [];
   let prevId = null;
+  let prevStart = 0;   // where the previous photo's lines begin in `doc`
 
   for (const part of parts) {
     const lines = trimBlankEdges(toLines(part.text || ''));
     if (!lines.length) continue;
 
     if (removeOverlap && doc.length) {
-      // Only look at the tail of the document so far: overlap is between
-      // neighbouring shots, not with something far back.
-      const tailStart = Math.max(0, doc.length - MAX_OVERLAP_LINES * 2);
-      const overlap = findOverlap(doc.slice(tailStart), lines);
+      // Compare only with the previous photo's own lines. Looking further
+      // back could skip past a short photo and delete it.
+      const overlap = findOverlap(doc.slice(prevStart), lines);
       if (overlap) {
-        const removed = contentLines(doc.slice(tailStart + overlap.prevCut)).length;
+        const removed = contentLines(doc.slice(prevStart + overlap.prevCut)).length;
         // Keep next's version of the overlapping lines: the earlier shot tends
         // to have the partially-cut lines at its bottom edge.
-        doc = trimBlankEdges(doc.slice(0, tailStart + overlap.prevCut));
+        doc = trimBlankEdges(doc.slice(0, prevStart + overlap.prevCut));
+        prevStart = doc.length;
         // No blank line here: the cut is mid-flow, so the text continues as-is.
         doc.push(...lines.slice(overlap.nextStart));
         junctions.push({ fromId: prevId, toId: part.id, removedLines: removed });
@@ -134,6 +135,7 @@ function consolidate(parts, opts = {}) {
     }
 
     if (doc.length) doc.push('');
+    prevStart = doc.length;
     doc.push(...lines);
     prevId = part.id;
   }

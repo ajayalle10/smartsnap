@@ -50,6 +50,15 @@ export function grayscale(canvas) {
   return canvas;
 }
 
+// iPhone Safari caps the total memory of all canvases and frees a canvas's
+// memory only when it's garbage-collected. Past the cap, drawing silently
+// produces nothing. Shrinking a canvas to 0×0 frees its memory right away.
+export function release(...canvases) {
+  for (const c of canvases) {
+    if (c instanceof HTMLCanvasElement) c.width = c.height = 0;
+  }
+}
+
 export function toBlob(canvas, type = 'image/jpeg', quality = 0.9) {
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not encode image'))), type, quality);
@@ -107,6 +116,7 @@ export function warpQuad(source, pts) {
   const H = homography(pts, w, h);
   const srcCanvas = source instanceof HTMLCanvasElement ? source : resized(source, 0);
   const src = srcCanvas.getContext('2d').getImageData(0, 0, sw, sh).data;
+  if (srcCanvas !== source) release(srcCanvas);
   const out = document.createElement('canvas');
   out.width = w;
   out.height = h;
@@ -142,6 +152,7 @@ export function blurScore(src) {
   const c = resized(src, 800);
   const { width: w, height: h } = c;
   const px = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  release(c);
   const g = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) g[i] = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
   let sum = 0, sumSq = 0, n = 0;

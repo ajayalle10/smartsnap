@@ -2,10 +2,13 @@
 // enclose is flattened to a rectangle. Used straight after taking a photo
 // ("capture" mode) and for editing a saved photo ("edit" mode).
 
-import { decode, rotated, warpQuad, isFullQuad } from './imaging.js';
+import { decode, resized, rotated, warpQuad, isFullQuad, release } from './imaging.js';
 
 const $ = (id) => document.getElementById(id);
 const PAD = 28;   // keeps the corner handles inside the screen and easy to grab
+// Work at the size photos are stored at, never the camera's full 12 MP:
+// full-size canvases blow through iPhone Safari's canvas memory cap.
+export const WORK_MAX_SIDE = 2400;
 
 const st = { work: null, source: null, turns: 0, corners: null, view: null, done: null };
 
@@ -15,7 +18,9 @@ const st = { work: null, source: null, turns: 0, corners: null, view: null, done
  * @returns {Promise<{action:'use', canvas:HTMLCanvasElement}|{action:'restore'}|{action:'cancel'}|{action:'retake'}>}
  */
 export async function openCropper(blob, opts) {
-  st.source = await decode(blob);
+  release(st.source, st.work);
+  st.source = resized(await decode(blob), WORK_MAX_SIDE);
+  st.work = null;
   st.turns = 0;
   const capture = opts.mode === 'capture';
   $('cropTitle').textContent = capture ? 'Crop photo' : 'Crop & straighten';
@@ -32,6 +37,13 @@ export async function openCropper(blob, opts) {
     const finish = (result) => {
       $('cropper').classList.add('hidden');
       document.body.classList.remove('no-scroll');
+      // Free our canvases, except the one handed back to the caller.
+      const keep = result.canvas;
+      if (st.source !== keep) release(st.source);
+      if (st.work !== keep) release(st.work);
+      st.source = st.work = null;
+      const display = $('cropCanvas');
+      display.width = display.height = 0;
       $('cropRetake').onclick = $('cropCancel').onclick = $('cropRestore').onclick =
         $('cropFull').onclick = $('cropApply').onclick = null;
       resolve(result);
@@ -58,7 +70,7 @@ export async function openCropper(blob, opts) {
       try {
         finish({ action: 'use', canvas: warpQuad(st.work, st.corners) });
       } catch (err) {
-        alert(err.message);
+        alert(`Couldn't crop this photo: ${err.message}`);
       } finally {
         $('cropApply').disabled = false;
         $('cropBusy').classList.add('hidden');
@@ -68,7 +80,8 @@ export async function openCropper(blob, opts) {
 }
 
 function setWork() {
-  st.work = rotated(st.source, st.turns);
+  if (st.work !== st.source) release(st.work);
+  st.work = st.turns % 4 === 0 ? st.source : rotated(st.source, st.turns);
   resetCorners();
 }
 

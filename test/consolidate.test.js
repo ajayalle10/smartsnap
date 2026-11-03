@@ -42,6 +42,16 @@ test('does not merge on a short repeated heading', () => {
   assert.strictEqual(r.junctions.length, 0);
 });
 
+test('a short photo is never skipped to match the photo before it', () => {
+  const r = consolidate([
+    { id: 1, text: 'Consecutive shots often overlap here\nYou can copy everything or share it\nEverything runs locally on your phone' },
+    { id: 2, text: 'SmartSnap turns photos into text\nCapture several pages with the camera' },
+    { id: 3, text: 'You can copy everything or share it\nEverything runs locally on your phone' },
+  ]);
+  assert.match(r.text, /SmartSnap turns photos into text\nCapture several pages with the camera/);
+  assert.deepStrictEqual(r.junctions, []);
+});
+
 test('overlap removal can be turned off', () => {
   const t = 'Same line of reasonable length here\nAnother identical line of text';
   const r = consolidate([{ id: 1, text: t }, { id: 2, text: t }], { removeOverlap: false });

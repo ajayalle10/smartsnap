@@ -3,7 +3,7 @@
 // happens while you keep taking photos.
 
 import * as db from './db.js';
-import { decode, resized, grayscale, toBlob } from './imaging.js';
+import { decode, resized, grayscale, toBlob, release } from './imaging.js';
 
 const abs = (p) => new URL(p, location.href).href;
 const LOW_CONFIDENCE = 60;
@@ -84,7 +84,8 @@ export function enqueue(photoId) {
       if (!photo) return;
       listener(await db.updatePhoto(photoId, { status: 'reading' }));
       const img = await decode(photo.edited || photo.image);
-      const blob = await toBlob(grayscale(resized(img, Number(settings.maxSide))), 'image/jpeg', 0.92);
+      const small = grayscale(resized(img, Number(settings.maxSide)));
+      const blob = await toBlob(small, 'image/jpeg', 0.92).finally(() => release(small));
       const scheduler = await start();
       const t0 = performance.now();
       // Not awaited: the next photo gets prepared while this one is read.
